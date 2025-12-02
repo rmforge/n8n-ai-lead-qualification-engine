@@ -1,0 +1,366 @@
+{
+  "name": "CRM Lead Qualification Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cb68030f-ba28-493f-b30f-83c53f29c678",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        80,
+        16
+      ],
+      "id": "7d8f33ae-1da4-4ece-aa0f-95e3d880d16c",
+      "name": "Webhook",
+      "webhookId": "cb68030f-ba28-493f-b30f-83c53f29c678"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"Success\"\n}",
+        "options": {}
+      },
+      "id": "e5c679ef-cbc1-47c4-99ec-84b9bf2dabf0",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        304,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the email from the previous node\nconst email = $input.item.json.body.email;\nconst domain = email.split('@')[1];\n\nlet enrichmentData = {};\n\n// Simulate API Database lookup\nif (domain === 'techflow-enterprises.com' || domain === 'acme-corp.com') {\n  enrichmentData = {\n    company_name: \"TechFlow Enterprises\",\n    industry: \"SaaS / Cloud Infrastructure\",\n    employee_count: 250,\n    annual_revenue: \"$50M+\",\n    location: \"Austin, TX\",\n    enrichment_status: \"SUCCESS\"\n  };\n} \n// NEW: Added David's Company here\nelse if (domain === 'mediscale-solutions.com') {\n  enrichmentData = {\n    company_name: \"Mediscale Solutions\",\n    industry: \"Healthcare Technology\",\n    employee_count: 150,\n    annual_revenue: \"$25M\",\n    location: \"Boston, MA\",\n    enrichment_status: \"SUCCESS\"\n  };\n} \nelse {\n  // Fallback for generic emails\n  enrichmentData = {\n    company_name: \"Unknown\",\n    industry: \"Unknown\",\n    employee_count: 1,\n    annual_revenue: \"Unknown\",\n    location: \"Unknown\",\n    enrichment_status: \"FAILED\"\n  };\n}\n\nreturn {\n  json: {\n    ...$input.item.json.body, // Keep original data\n    ...enrichmentData         // Add the \"found\" data\n  }\n};"
+      },
+      "id": "3264cbd3-c84b-45e3-8f7b-365efb397a36",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=You are a senior sales manager. Analyze the following lead data and score them from 0-100 based on fit for an Enterprise SaaS product.\n\nThe Ideal Customer Profile (ICP) is:\n- Revenue: >$10M (High priority)\n- Employees: >50 (High priority)\n- Industry: SaaS or Technology\n\nLead Data:\n- Company: {{ $json.company_name }}\n- Industry: {{ $json.industry }}\n- Revenue: {{ $json.annual_revenue }}\n- Employees: {{ $json.employee_count }}\n- Message: {{ $json.message }}\n\nOutput Instructions:\nYou must output ONLY a valid JSON object. Do not add markdown formatting (like ```json).\nFormat:\n{\n  \"score\": number,\n  \"reason\": \"short explanation\",\n  \"status\": \"HOT\" or \"COLD\"\n}"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "e74b47aa-3252-43e9-9232-5391e9d1872d",
+      "name": "Basic LLM Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        752,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-pro-latest",
+        "options": {}
+      },
+      "id": "0003e547-0cd7-40c2-9f44-8f5e3a12aa9a",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        768,
+        256
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YOUR_GEMINI_API_KEY_HERE",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get the text answer from the AI\nconst aiOutput = $input.item.json.text;\n\n// 2. Clean up the formatting (Remove ```json blocks)\nconst cleanJson = aiOutput.replace(/```json/g, '').replace(/```/g, '').trim();\nconst aiData = JSON.parse(cleanJson);\n\n// 3. RETRIEVE THE LOST DATA\n// We look back at the enrichment node named \"Code in JavaScript\"\n// (Make sure your enrichment node is actually named \"Code in JavaScript\")\nconst originalData = $(\"Code in JavaScript\").item.json;\n\n// 4. Merge them together\nreturn {\n  json: {\n    ...originalData,  // This brings back Company Name, Revenue, etc.\n    ...aiData         // This adds the Score and Reason\n  }\n};"
+      },
+      "id": "8c76cfdb-0011-4fd4-a282-3ec527564794",
+      "name": "Parse JSON from AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $('Parse JSON from AI Response').item.json.score }}",
+              "rightValue": 70,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e64adeca-5794-49fe-ae11-68c3a12884ba",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1328,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0A0B5GGK2P",
+          "mode": "list",
+          "cachedResultName": "hot-lead-alert"
+        },
+        "text": "=🚨 *HOT LEAD ALERT* 🚨\n\n🚀 *Score:* {{ $json.score }} / 100\n\n🏢 *Company:* {{ $json.company_name }}\n💰 *Revenue:* {{ $json.annual_revenue }}\n\n💡 *AI Reason:*\n{{ $json.reason }}\n\n👉 *Action:* Contact immediately!",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1536,
+        -80
+      ],
+      "id": "1b16e425-6d0a-4314-98bf-ef6747ae0b2a",
+      "name": "Send a message",
+      "webhookId": "9361c081-e82c-4aa6-b8c6-5249d593672d",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "gf4J20L6O4Ls0eEV",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1IaWrAB8pZ33LPc4F0YCokbKHJuF7JQXUfuy9eWSi-ZU",
+          "mode": "list",
+          "cachedResultName": "Cold Lead Archive",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1IaWrAB8pZ33LPc4F0YCokbKHJuF7JQXUfuy9eWSi-ZU/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1IaWrAB8pZ33LPc4F0YCokbKHJuF7JQXUfuy9eWSi-ZU/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $json.name }}",
+            "Email": "={{ $json.email }}",
+            "Company": "={{ $json.company_name }}",
+            "Score": "={{ $json.score }}",
+            "Reason": "={{ $json.reason }}"
+          },
+          "matchingColumns": [
+            "Name"
+          ],
+          "schema": [
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Score",
+              "displayName": "Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Reason",
+              "displayName": "Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1568,
+        112
+      ],
+      "id": "49581d39-6191-4cb0-8777-740481592c72",
+      "name": "Cold Lead Archive",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "JZCg9pNRLBOxxDb7",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON from AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON from AI Response": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cold Lead Archive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "15dd038e-ef6c-4b17-85af-2d928c1c4279",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8c92defd2c69e8f659277e0758537425b76ab726eef18f35d9e39864147600db"
+  },
+  "id": "jVu1e84PLkSMB2J9",
+  "tags": []
+}
